@@ -19,7 +19,7 @@ private:
     float DominioMin = -1.0f;
     float step = 0.1f;
 
-    bool debug = true;
+    bool debug = false;
 
     // metodo -> shunting-Yard
 
