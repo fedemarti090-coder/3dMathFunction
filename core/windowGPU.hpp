@@ -23,6 +23,7 @@ struct CameraBufferObject
 {
     Mat4 view;
     Mat4 projection;
+    Mat4 model;
 };
 
 class WinINIT
@@ -76,6 +77,17 @@ private:
 
     int width = 1200;
     int height = 800;
+
+    bool isClick = false;
+    int clickX = 0;
+    int clickY = 0;
+
+    float sensitivity = 0.01f;
+
+    Mat4 model;
+
+    float angleY = 0;
+    float angleZ = 20;
 
     uint32_t findGraphicsQueueFamily(VkPhysicalDevice device)
     {
@@ -910,7 +922,6 @@ private:
 
         // swapchain ( VRAM -> GPU )
         createSwapChain();
-
     }
 
     void cleanupVulkan()
@@ -1146,6 +1157,52 @@ public:
                     break;
                 }
 
+                // Cattura del mouse
+
+                POINT mousePos;
+                GetCursorPos(&mousePos);
+                ScreenToClient(hwnd, &mousePos);
+
+                bool isLeftPressed = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+                int mouseX = mousePos.x;
+                int mouseY = mousePos.y;
+
+                if (isLeftPressed)
+                {
+                    if (!isClick)
+                    {
+                        if (mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height)
+                        {
+                            isClick = true;
+                            clickX = mouseX;
+                            clickY = mouseY;
+                        }
+                    }
+                    else
+                    {
+                        int deltaX = mouseX - clickX;
+
+                        float angleX = deltaX * sensitivity;
+
+                        Mat4 incRotX = rotateZ(angleX);
+                        Mat4 incRotY = rotateX(angleY);
+                        Mat4 incRotZ = rotateY(angleZ);
+
+                        model = incRotY * incRotX * incRotZ * model;
+
+                        angleY = 0.0f;
+                        angleZ = 0.0f;
+
+                        clickX = mouseX;
+                        clickY = mouseY;
+                    }
+                }
+                else
+                {
+                    isClick = false;
+                }
+
                 // Render
 
                 float aspect = (float)swapChainExtent.width / (float)swapChainExtent.height;
@@ -1177,6 +1234,7 @@ public:
                 CameraBufferObject ubo{};
                 ubo.view = view;
                 ubo.projection = projection;
+                ubo.model = model;
                 std::memcpy(uniformBufferMapped, &ubo, sizeof(ubo));
 
                 uint32_t imageIndex;

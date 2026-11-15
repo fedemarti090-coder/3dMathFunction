@@ -8,7 +8,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     {
         WinINIT app;
 
-        std::string function = "x^3-3xy^2";
+        std::string function = "x^3 - 3xy^2";
         ans = app.Run(hInstance, nCmdShow, function);
     }
     catch (const std::exception &e)

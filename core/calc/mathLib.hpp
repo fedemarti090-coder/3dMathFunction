@@ -93,3 +93,64 @@ inline Mat4 customLookAt(const Vec3 &eye, const Vec3 &center, const Vec3 &up)
 
     return view;
 }
+
+Mat4 rotateX(float angle)
+{
+    Mat4 m; 
+    float c = cos(angle);
+    float s = sin(angle);
+
+    m[1][1] =  c;
+    m[2][1] = -s;
+    m[1][2] =  s;
+    m[2][2] =  c;
+
+    return m;
+}
+
+Mat4 rotateY(float angle)
+{
+    Mat4 m;
+    float c = cos(angle);
+    float s = sin(angle);
+
+    m[0][0] =  c;
+    m[2][0] =  s;
+    m[0][2] = -s;
+    m[2][2] =  c;
+
+    return m;
+}
+
+Mat4 rotateZ(float angle)
+{
+    Mat4 m;
+    float c = cos(angle);
+    float s = sin(angle);
+
+    m[0][0] =  c;
+    m[1][0] = -s;
+    m[0][1] =  s;
+    m[1][1] =  c;
+
+    return m;
+}
+
+inline Mat4 operator*(const Mat4& a, const Mat4& b)
+{
+    Mat4 result;
+
+    for (int row = 0; row < 4; ++row)
+    {
+        for (int col = 0; col < 4; ++col)
+        {
+            result[col][row] = 
+                a[0][row] * b[col][0] +
+                a[1][row] * b[col][1] +
+                a[2][row] * b[col][2] +
+                a[3][row] * b[col][3];
+        }
+    }
+
+    return result;
+}
