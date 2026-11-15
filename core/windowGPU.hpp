@@ -19,6 +19,8 @@
 #include "calc/mathLib.hpp"
 #include "calc/mathEnigne.hpp"
 
+#include "../ui/uiRenderer.hpp"
+
 // UBO ( Uniform Buffer Object )
 struct CameraBufferObject
 {
@@ -31,6 +33,7 @@ class WinINIT
 {
 private:
     MathEngine mathEngine;
+    UiRenderer uirenderer;
 
     VkInstance instance = VK_NULL_HANDLE;  // Istanza global
     VkSurfaceKHR surface = VK_NULL_HANDLE; // Superfice di rendering
@@ -662,6 +665,7 @@ private:
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
         vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+        uirenderer.Frame(commandBuffer);
         vkCmdEndRenderPass(commandBuffer);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
@@ -929,6 +933,8 @@ private:
 
     void cleanupVulkan()
     {
+        uirenderer.cleanup();
+
         if (commandPool != VK_NULL_HANDLE)
         {
             vkDestroyCommandPool(device, commandPool, nullptr);
@@ -1154,6 +1160,7 @@ public:
             createUniformBuffer();
             createDescriptorPoolAndSet();
             createGraphicsPipeline();
+            uirenderer.init(device, physicalDevice, renderPass, swapChainExtent);
             createVertexBuffer();
             createFramebuffers();
             createCommandBuffers();
