@@ -6,6 +6,7 @@
 #endif
 
 #define VK_USE_PLATFORM_WIN32_KHR
+#include <iostream>
 #include <windows.h>
 #include <vulkan/vulkan.h>
 #include <stdexcept>
@@ -82,12 +83,18 @@ private:
     int clickX = 0;
     int clickY = 0;
 
-    float sensitivity = 0.01f;
+    float sensitivity = 0.005f;
 
     Mat4 model;
 
+    float angleX = 0;
     float angleY = 0;
-    float angleZ = 20;
+    float angleZ = 0;
+
+    static inline float cameraDistance = 5.0f;
+
+    static inline float nearestPos = 0.5f;
+    static inline float furtestPos = 50.0f;
 
     uint32_t findGraphicsQueueFamily(VkPhysicalDevice device)
     {
@@ -1074,6 +1081,26 @@ public:
             EndPaint(hwnd, &ps);
         }
             return 0;
+
+        case WM_MOUSEWHEEL:
+
+            int zoomDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+
+            if (zoomDelta > 0)
+            {
+                cameraDistance -= 0.3f;
+            }
+            else
+            {
+                cameraDistance += 0.3f;
+            }
+
+            if (cameraDistance < nearestPos)
+                cameraDistance = 0.5f;
+            if (cameraDistance > furtestPos)
+                cameraDistance = 50.0f;
+
+            return 0;
         }
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
@@ -1135,6 +1162,9 @@ public:
             createFramebuffers();
             createCommandBuffers();
 
+            model = rotateY(angleZ);
+            angleZ = 0.0f;
+
             MSG msg = {};
 
             bool isRunning = true;
@@ -1164,11 +1194,12 @@ public:
                 ScreenToClient(hwnd, &mousePos);
 
                 bool isLeftPressed = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+                bool isRightPressed = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
 
                 int mouseX = mousePos.x;
                 int mouseY = mousePos.y;
 
-                if (isLeftPressed)
+                if (isLeftPressed || isRightPressed)
                 {
                     if (!isClick)
                     {
@@ -1182,16 +1213,30 @@ public:
                     else
                     {
                         int deltaX = mouseX - clickX;
+                        int deltaY = mouseY - clickY;
 
-                        float angleX = deltaX * sensitivity;
+                        if (isLeftPressed)
+                        {
+                            angleX = deltaX * sensitivity;
+                        }
+                        else
+                        {
+                            angleY = deltaY * sensitivity;
+                        }
 
                         Mat4 incRotX = rotateZ(angleX);
                         Mat4 incRotY = rotateX(angleY);
                         Mat4 incRotZ = rotateY(angleZ);
 
-                        model = incRotY * incRotX * incRotZ * model;
+                        if (isLeftPressed)
+                        {
+                            model = incRotY * incRotX * incRotZ * model;
+                        }
+                        else
+                        {
+                            model = incRotX * incRotY * incRotZ * model;
+                        }
 
-                        angleY = 0.0f;
                         angleZ = 0.0f;
 
                         clickX = mouseX;
@@ -1226,7 +1271,8 @@ public:
                 projection[2][3] = -1.0f;
                 projection[3][2] = (farPlane * nearPlane) / (nearPlane - farPlane);
 
-                Vec3 cameraPos(3.0f, -4.0f, 3.0f);
+                float scaleDir = cameraDistance / 5.0f;
+                Vec3 cameraPos(3.0f * scaleDir, -4.0f * scaleDir, 3.0f * scaleDir);
                 Vec3 cameraTarget(0.0f, 0.0f, 0.0f);
                 Vec3 upAxis(0.0f, 0.0f, 1.0f);
                 Mat4 view = customLookAt(cameraPos, cameraTarget, upAxis);

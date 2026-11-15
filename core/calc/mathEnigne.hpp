@@ -19,9 +19,11 @@ private:
     int stepsPerAxis = 0;
     int verticesPerAxis = 0;
 
+    // -------- DEBUG --------
     bool debug = false;
-    bool rawData = true;
-    bool outDebug = true;
+    bool rawData = false;
+    bool outDebug = false;
+    // -------- ----- --------
 
     std::vector<Vertex> vertexList = {};
     std::vector<uint32_t> indices = {};
