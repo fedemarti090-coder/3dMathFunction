@@ -5,12 +5,8 @@
 #include <charconv>
 #include <cmath>
 
-struct Vertex
-{
-    float x;
-    float y;
-    float z;
-};
+#include "mathLib.hpp"
+
 
 class MathEngine
 {

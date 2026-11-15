@@ -14,9 +14,9 @@ private:
     float FOV = 2.0f;
 
 public:
-    std::vector<Point> processVertex(const std::vector<Vertex> &inputVertex)
+    std::vector<Vertex> processVertex(const std::vector<Vertex> &inputVertex)
     {
-        std::vector<Point> outputVertex;
+        std::vector<Vertex> outputVertex;
         outputVertex.reserve(inputVertex.size());
 
         for (const auto &v : inputVertex)
@@ -31,7 +31,7 @@ public:
             x_ = (x_ + 1.0f) * 0.5f * W;
             y_ = (1.0f - (y_ + 1.0f) * 0.5f) * H;
 
-            outputVertex.push_back({x_, y_});
+            outputVertex.push_back({x_, y_, z});
         }
 
         return outputVertex;
