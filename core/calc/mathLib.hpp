@@ -17,35 +17,79 @@ struct Vec3
     float x, y, z;
 };
 
+inline Vec3 operator-(const Vec3 &a, const Vec3 &b)
+{
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+inline float dot(const Vec3 &a, const Vec3 &b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+inline Vec3 cross(const Vec3 &a, const Vec3 &b)
+{
+    return {
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x};
+}
+inline Vec3 normalize(const Vec3 &v)
+{
+    float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    if (length == 0.0f)
+        return {0.0f, 0.0f, 0.0f};
+    return {v.x / length, v.y / length, v.z / length};
+}
+
 struct Mat4
 {
-    float m[4][4] = {0};
+    float m[16];
 
-    static Mat4 identity()
+    Mat4()
     {
-        Mat4 res;
-        res.m[0][0] = 1.0f;
-        res.m[1][1] = 1.0f;
-        res.m[2][2] = 1.0f;
-        res.m[3][3] = 1.0f;
-        return res;
+        for (int i = 0; i < 16; ++i)
+            m[i] = 0.0f;
+        m[0] = m[5] = m[10] = m[15] = 1.0f;
     }
 
-    Mat4 operator*(const Mat4 &o) const
+    float *operator[](int col)
     {
-        Mat4 res;
-        for (int i = 0; i < 4; i++)
-        {
-            for (int j = 0; j < 4; j++)
-            {
-                res.m[i][j] = 0;
-                for (int k = 0; k < 4; k++)
-                {
-                    res.m[i][j] += m[i][k] * o.m[k][j];
-                }
-            }
-        }
+        return &m[col * 4];
+    }
 
-        return res;
+    const float *operator[](int col) const
+    {
+        return &m[col * 4];
     }
 };
+
+inline float radians(float degrees)
+{
+    return degrees * 3.14159265358979323846f / 180.0f;
+}
+
+inline Mat4 customLookAt(const Vec3 &eye, const Vec3 &center, const Vec3 &up)
+{
+    Vec3 f = normalize(center - eye);
+    Vec3 s = normalize(cross(f, up));
+    Vec3 u = cross(s, f);
+
+    Mat4 view;
+    view[0][0] = s.x;
+    view[1][0] = s.y;
+    view[2][0] = s.z;
+    view[3][0] = -dot(s, eye);
+    view[0][1] = u.x;
+    view[1][1] = u.y;
+    view[2][1] = u.z;
+    view[3][1] = -dot(u, eye);
+    view[0][2] = -f.x;
+    view[1][2] = -f.y;
+    view[2][2] = -f.z;
+    view[3][2] = dot(f, eye);
+    view[0][3] = 0.0f;
+    view[1][3] = 0.0f;
+    view[2][3] = 0.0f;
+    view[3][3] = 1.0f;
+
+    return view;
+}

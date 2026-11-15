@@ -5,6 +5,8 @@
 #include <charconv>
 #include <cmath>
 
+#include <fstream> // per debug
+
 #include "mathLib.hpp"
 
 class MathEngine
@@ -19,6 +21,7 @@ private:
 
     bool debug = false;
     bool rawData = true;
+    bool outDebug = true;
 
     std::vector<Vertex> vertexList = {};
     std::vector<uint32_t> indices = {};
@@ -352,6 +355,23 @@ private:
         return ind;
     }
 
+    void outputCSVtoDebug(std::vector<Vertex> list, std::string fileName)
+    {
+
+        std::ofstream file(fileName);
+
+        if (file.is_open())
+        {
+            file << "x, " << "y, " << "z, " << "\n";
+            for (const Vertex &r : list)
+            {
+                file << r.x << ", " << r.y << ", " << r.z << "\n";
+            }
+            file.close();
+        }
+        
+    }
+
 public:
     bool calcolaFunzione3D(std::string f)
     {
@@ -367,6 +387,11 @@ public:
             stampaFuncStr(AnsSY);
             stampaVertexList(vertexList);
             stampaIndices(indices);
+        }
+
+        if (outDebug)
+        {
+            outputCSVtoDebug(vertexList, "../data/outputDebug.csv");
         }
 
         return true;
