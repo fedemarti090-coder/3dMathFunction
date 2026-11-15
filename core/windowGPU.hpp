@@ -87,10 +87,6 @@ private:
 
     Mat4 model;
 
-    float angleX = 0;
-    float angleY = 0;
-    float angleZ = 0;
-
     static inline float cameraDistance = 5.0f;
 
     static inline float nearestPos = 0.5f;
@@ -1162,9 +1158,6 @@ public:
             createFramebuffers();
             createCommandBuffers();
 
-            model = rotateY(angleZ);
-            angleZ = 0.0f;
-
             MSG msg = {};
 
             bool isRunning = true;
@@ -1217,27 +1210,18 @@ public:
 
                         if (isLeftPressed)
                         {
-                            angleX = deltaX * sensitivity;
+                            if (deltaX != 0)
+                            {
+                                model = rotateZ(deltaX * sensitivity) * model;
+                            }
                         }
-                        else
+                        else if (isRightPressed)
                         {
-                            angleY = deltaY * sensitivity;
+                            if (deltaY != 0)
+                            {
+                                model = rotateX(deltaY * sensitivity) * model;
+                            }
                         }
-
-                        Mat4 incRotX = rotateZ(angleX);
-                        Mat4 incRotY = rotateX(angleY);
-                        Mat4 incRotZ = rotateY(angleZ);
-
-                        if (isLeftPressed)
-                        {
-                            model = incRotY * incRotX * incRotZ * model;
-                        }
-                        else
-                        {
-                            model = incRotX * incRotY * incRotZ * model;
-                        }
-
-                        angleZ = 0.0f;
 
                         clickX = mouseX;
                         clickY = mouseY;

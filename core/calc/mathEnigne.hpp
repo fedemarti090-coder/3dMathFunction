@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <stdexcept>
 
 #include <fstream> // per debug
 
@@ -12,8 +13,8 @@
 class MathEngine
 {
 private:
-    float DominioMax = 1.0f;
-    float DominioMin = -1.0f;
+    float DominioMax = 3.14f *  2;
+    float DominioMin = -3.14f * 2;
     float step = 0.1f;
 
     int stepsPerAxis = 0;
@@ -48,6 +49,18 @@ private:
         return isoperator != Operator.end();
     }
 
+    bool isFunction(const std::string &str)
+    {
+        return str == "sin" || str == "cos" || str == "tan";
+    }
+
+    bool isAlphaString(const std::string &str)
+    {
+        if (str.empty())
+            return false;
+        return std::isalpha(static_cast<unsigned char>(str[0])) && str != "x" && str != "y";
+    }
+
     std::vector<std::string> tokenizeFunction(std::string f)
     {
         std::vector<std::string> fTokenized;
@@ -75,7 +88,7 @@ private:
                 if (!fTokenized.empty())
                 {
                     std::string last = fTokenized.back();
-                    if (last == "x" || last == "y" || last == ")")
+                    if (isStringFloat(last) || last == "x" || last == "y" || last == ")" || (isAlphaString(last) && !isFunction(last)))
                     {
                         fTokenized.push_back("*");
                     }
@@ -85,8 +98,47 @@ private:
                 continue;
             }
 
+            if (std::isalpha(c))
+            {
+                std::string alphaStr = "";
+                while (i < f.length() && std::isalpha(f[i]))
+                {
+                    alphaStr += f[i];
+                    i++;
+                }
+
+                std::string functionName;
+                std::string shorthandArgument;
+                if (alphaStr.size() == 4 && isFunction(alphaStr.substr(0, 3)) &&
+                    (alphaStr[3] == 'x' || alphaStr[3] == 'y'))
+                {
+                    functionName = alphaStr.substr(0, 3);
+                    shorthandArgument = alphaStr.substr(3, 1);
+                }
+
+                if (!fTokenized.empty())
+                {
+                    std::string last = fTokenized.back();
+                    if (isStringFloat(last) || last == "x" || last == "y" || last == ")" || (isAlphaString(last) && !isFunction(last)))
+                    {
+                        fTokenized.push_back("*");
+                    }
+                }
+
+                if (!functionName.empty())
+                {
+                    fTokenized.push_back(functionName);
+                    fTokenized.push_back(shorthandArgument);
+                }
+                else
+                {
+                    fTokenized.push_back(alphaStr);
+                }
+                continue;
+            }
+
             std::string operators = "+-*/^()";
-            if (operators.find(c) != std::string::npos || c == 'x' || c == 'y')
+            if (operators.find(c) != std::string::npos)
             {
                 std::string tokenStr = std::string(1, c);
 
@@ -97,11 +149,12 @@ private:
                     bool lastIsNum = isStringFloat(last);
                     bool lastIsVar = (last == "x" || last == "y");
                     bool lastIsCloseParen = (last == ")");
+                    bool lastIsAlpha = isAlphaString(last) && !isFunction(last);
 
                     bool currentIsVar = (tokenStr == "x" || tokenStr == "y");
                     bool currentIsOpenParen = (tokenStr == "(");
 
-                    if ((lastIsNum || lastIsVar || lastIsCloseParen) && (currentIsVar || currentIsOpenParen))
+                    if ((lastIsNum || lastIsVar || lastIsCloseParen || lastIsAlpha) && (currentIsVar || currentIsOpenParen))
                     {
                         fTokenized.push_back("*");
                     }
@@ -181,6 +234,8 @@ private:
             return 2;
         if (op == "^")
             return 3;
+        if (op == "sin" || op == "cos" || op == "tan")
+            return 4;
         return 0;
     }
 
@@ -194,6 +249,12 @@ private:
             if (isStringFloat(chunk) || chunk == "x" || chunk == "y")
             {
                 outputQueue.push_back(chunk);
+                continue;
+            }
+
+            if (isAlphaString(chunk))
+            {
+                operatorStack.push_back(chunk);
                 continue;
             }
 
@@ -212,6 +273,12 @@ private:
                 }
                 if (!operatorStack.empty() && operatorStack.back() == "(")
                 {
+                    operatorStack.pop_back();
+                }
+
+                if (!operatorStack.empty() && isAlphaString(operatorStack.back()))
+                {
+                    outputQueue.push_back(operatorStack.back());
                     operatorStack.pop_back();
                 }
                 continue;
@@ -276,7 +343,7 @@ private:
             {
                 if (evalStack.size() < 2)
                 {
-                    return 0.0f;
+                    throw std::runtime_error("Espressione non valida: operatore binario senza due operandi.");
                 }
 
                 float b = evalStack.back();
@@ -299,14 +366,38 @@ private:
 
                 evalStack.push_back(result);
             }
+            else if (token == "sin" || token == "cos" || token == "tan")
+            {
+                if (evalStack.empty())
+                {
+                    throw std::runtime_error("Espressione non valida: funzione trigonometrica senza argomento.");
+                }
+
+                float a = evalStack.back();
+                evalStack.pop_back();
+
+                float result = 0.0f;
+                if (token == "sin")
+                    result = std::sin(a);
+                else if (token == "cos")
+                    result = std::cos(a);
+                else if (token == "tan")
+                    result = std::tan(a);
+
+                evalStack.push_back(result);
+            }
+            else
+            {
+                throw std::runtime_error("Token non riconosciuto nell'espressione: " + token);
+            }
         }
 
-        if (!evalStack.empty())
+        if (evalStack.size() != 1)
         {
-            return evalStack.back();
+            throw std::runtime_error("Espressione non valida: deve produrre un solo risultato.");
         }
 
-        return 0.0f;
+        return evalStack.back();
     }
 
     std::vector<Vertex> avviaCalcolo(std::vector<std::string> f)
@@ -371,7 +462,6 @@ private:
             }
             file.close();
         }
-        
     }
 
 public:
