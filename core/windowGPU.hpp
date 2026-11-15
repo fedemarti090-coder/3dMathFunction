@@ -13,14 +13,18 @@
 #include <array>
 #include <fstream>
 #include <algorithm>
+#include <cstring>
 
 #include "calc/mathLib.hpp"
+#include "calc/mathEnigne.hpp"
 
 class WinINIT
 {
 private:
+    MathEngine mathEngine;
+
     VkInstance instance = VK_NULL_HANDLE;  // Istanza global
-    VkSurfaceKHR surface = VK_NULL_HANDLE; // Superfice di redneringo
+    VkSurfaceKHR surface = VK_NULL_HANDLE; // Superfice di rendering
 
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
@@ -34,6 +38,22 @@ private:
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkRenderPass renderPass = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
+    uint32_t indexCount = 0;
+
+    std::vector<VkFramebuffer> swapChainFrameBuffer;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
+    VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
+    std::vector<VkImageView> swapChainImageViews;
+
+    std::vector<Vertex> vertexList = {};
+    std::vector<uint32_t> indices = {};
 
     int width = 1200;
     int height = 800;
@@ -49,9 +69,11 @@ private:
         uint32_t i = 0;
         for (const auto &queueFamily : queueFamilies)
         {
-            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            VkBool32 presentSupport = VK_FALSE;
+            if ((queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport) == VK_SUCCESS &&
+                presentSupport)
             {
-
                 return i;
             }
             i++;
@@ -372,6 +394,217 @@ private:
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
     }
 
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+    {
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+        {
+            if ((typeFilter & (1 << i)) &&
+                (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            {
+                return i;
+            }
+        }
+
+        throw std::runtime_error("Impossibile trovare un tipo di memoria GPU adatto!");
+    }
+
+    void createVertexBuffer()
+    {
+
+        // Creazione Vertex Buffer
+
+        VkDeviceSize vertexBufferSize = sizeof(Vertex) * vertexList.size();
+
+        VkBufferCreateInfo vertexBufferInfo{};
+        vertexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        vertexBufferInfo.size = vertexBufferSize;
+        vertexBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        vertexBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(device, &vertexBufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile creare il Vertex Buffer!");
+        }
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile allocare la memoria del Vertex Buffer!");
+        }
+        if (vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile collegare la memoria al Vertex Buffer!");
+        }
+
+        void *data;
+        if (vkMapMemory(device, vertexBufferMemory, 0, vertexBufferSize, 0, &data) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile mappare la memoria del Vertex Buffer!");
+        }
+        memcpy(data, vertexList.data(), (size_t)vertexBufferSize);
+        vkUnmapMemory(device, vertexBufferMemory);
+
+        VkDeviceSize indexBufferSize = sizeof(uint32_t) * indices.size();
+        indexCount = static_cast<uint32_t>(indices.size());
+
+        VkBufferCreateInfo indexBufferInfo{};
+        indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        indexBufferInfo.size = indexBufferSize;
+        indexBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        indexBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(device, &indexBufferInfo, nullptr, &indexBuffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile creare l'Index Buffer!");
+        }
+        vkGetBufferMemoryRequirements(device, indexBuffer, &memRequirements);
+
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &indexBufferMemory) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile allocare la memoria dell'Index Buffer!");
+        }
+        if (vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile collegare la memoria all'Index Buffer!");
+        }
+
+        if (vkMapMemory(device, indexBufferMemory, 0, indexBufferSize, 0, &data) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile mappare la memoria dell'Index Buffer!");
+        }
+        memcpy(data, indices.data(), (size_t)indexBufferSize);
+        vkUnmapMemory(device, indexBufferMemory);
+    }
+
+    void createFramebuffers()
+    {
+        swapChainFrameBuffer.resize(swapChainImages.size(), VK_NULL_HANDLE);
+        swapChainImageViews.resize(swapChainImages.size(), VK_NULL_HANDLE);
+
+        for (size_t i = 0; i < swapChainImages.size(); i++)
+        {
+            VkImageViewCreateInfo colorImageViewInfo{};
+            colorImageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            colorImageViewInfo.image = swapChainImages[i];
+            colorImageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            colorImageViewInfo.format = swapChainImageFormat;
+            colorImageViewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            colorImageViewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            colorImageViewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            colorImageViewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            colorImageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            colorImageViewInfo.subresourceRange.baseMipLevel = 0;
+            colorImageViewInfo.subresourceRange.levelCount = 1;
+            colorImageViewInfo.subresourceRange.baseArrayLayer = 0;
+            colorImageViewInfo.subresourceRange.layerCount = 1;
+
+            if (vkCreateImageView(device, &colorImageViewInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS)
+            {
+                throw std::runtime_error("Impossibile creare l'Image View per la Swapchain!");
+            }
+
+            VkFramebufferCreateInfo framebufferInfo{};
+            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferInfo.renderPass = renderPass;
+            framebufferInfo.attachmentCount = 1;
+            framebufferInfo.pAttachments = &swapChainImageViews[i];
+            framebufferInfo.width = swapChainExtent.width;
+            framebufferInfo.height = swapChainExtent.height;
+            framebufferInfo.layers = 1;
+
+            if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFrameBuffer[i]) != VK_SUCCESS)
+            {
+                throw std::runtime_error("Impossibile creare il Framebuffer!");
+            }
+        }
+    }
+
+    void createCommandBuffers()
+    {
+        uint32_t queueFamilyIndex = findGraphicsQueueFamily(physicalDevice);
+
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        poolInfo.queueFamilyIndex = queueFamilyIndex;
+
+        if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile creare il Command Pool!");
+        }
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = commandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+
+        if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile allocare il Command Buffer!");
+        }
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
+            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile creare i semaphore di sincronizzazione!");
+        }
+    }
+
+    void recordCommandBuffer(uint32_t imageIndex)
+    {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile avviare la registrazione del Command Buffer!");
+        }
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = swapChainFrameBuffer[imageIndex]; // Indice dinamico dell immagine
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = swapChainExtent;
+
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Sfondo nero
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+        VkBuffer vertexBuffers[] = {vertexBuffer};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+        vkCmdEndRenderPass(commandBuffer);
+
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Impossibile registrare il Command Buffer!");
+        }
+    }
+
     void initVulkan(HWND hwnd, HINSTANCE hInstance)
     {
         VkApplicationInfo appInfo = {};
@@ -452,11 +685,63 @@ private:
         createSwapChain();
 
         createGraphicsPipeline();
-
     }
 
     void cleanupVulkan()
     {
+        if (commandPool != VK_NULL_HANDLE)
+        {
+            vkDestroyCommandPool(device, commandPool, nullptr);
+            commandPool = VK_NULL_HANDLE;
+        }
+
+        for (auto framebuffer : swapChainFrameBuffer)
+        {
+            if (framebuffer != VK_NULL_HANDLE)
+            {
+                vkDestroyFramebuffer(device, framebuffer, nullptr);
+            }
+        }
+        swapChainFrameBuffer.clear();
+        for (VkImageView imageView : swapChainImageViews)
+        {
+            if (imageView != VK_NULL_HANDLE)
+            {
+                vkDestroyImageView(device, imageView, nullptr);
+            }
+        }
+        swapChainImageViews.clear();
+        if (imageAvailableSemaphore != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+            imageAvailableSemaphore = VK_NULL_HANDLE;
+        }
+        if (renderFinishedSemaphore != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+            renderFinishedSemaphore = VK_NULL_HANDLE;
+        }
+        if (vertexBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, vertexBuffer, nullptr);
+            vertexBuffer = VK_NULL_HANDLE;
+        }
+        if (vertexBufferMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, vertexBufferMemory, nullptr);
+            vertexBufferMemory = VK_NULL_HANDLE;
+        }
+
+        if (indexBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, indexBuffer, nullptr);
+            indexBuffer = VK_NULL_HANDLE;
+        }
+        if (indexBufferMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, indexBufferMemory, nullptr);
+            indexBufferMemory = VK_NULL_HANDLE;
+        }
         if (swapChain != VK_NULL_HANDLE)
         {
             vkDestroySwapchainKHR(device, swapChain, nullptr);
@@ -515,7 +800,7 @@ public:
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
 
-    int Run(HINSTANCE hInstance, int nCmdShow)
+    int Run(HINSTANCE hInstance, int nCmdShow, std::string function)
     {
 
         const wchar_t CLASS_NAME[] = L"Vulkan Window Class";
@@ -550,33 +835,120 @@ public:
             return -1;
         }
 
-        MSG msg = {};
-
-        bool isRunning = true;
-
-        while (isRunning)
+        try
         {
-            while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+            if (!mathEngine.calcolaFunzione3D(function))
             {
-                if (msg.message == WM_QUIT)
+                throw std::runtime_error("Errore nel calcolo della funzione");
+            }
+
+            vertexList = mathEngine.getVertexList();
+            indices = mathEngine.getIndices();
+            if (vertexList.empty() || indices.empty())
+            {
+                throw std::runtime_error("La funzione non ha generato geometria da disegnare.");
+            }
+
+            createVertexBuffer();
+            createFramebuffers();
+            createCommandBuffers();
+
+            MSG msg = {};
+
+            bool isRunning = true;
+
+            while (isRunning)
+            {
+                while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
                 {
-                    isRunning = false;
+                    if (msg.message == WM_QUIT)
+                    {
+                        isRunning = false;
+                        break;
+                    }
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                }
+
+                if (!isRunning)
+                {
                     break;
                 }
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
 
-            if (isRunning)
-            {
+                // Render
 
+                uint32_t imageIndex;
+                VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+                if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+                {
+                    throw std::runtime_error("Impossibile acquisire l'immagine della Swapchain!");
+                }
+
+                if (vkResetCommandBuffer(commandBuffer, 0) != VK_SUCCESS)
+                {
+                    throw std::runtime_error("Impossibile resettare il Command Buffer!");
+                }
+                recordCommandBuffer(imageIndex);
+
+                VkSubmitInfo submitInfo{};
+                submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+                VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+                submitInfo.waitSemaphoreCount = 1;
+                submitInfo.pWaitSemaphores = &imageAvailableSemaphore;
+                submitInfo.pWaitDstStageMask = waitStages;
+
+                submitInfo.commandBufferCount = 1;
+                submitInfo.pCommandBuffers = &commandBuffer;
+
+                submitInfo.signalSemaphoreCount = 1;
+                submitInfo.pSignalSemaphores = &renderFinishedSemaphore;
+
+                if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+                {
+                    throw std::runtime_error("Impossibile inviare il command buffer alla coda grafica!");
+                }
+
+                VkPresentInfoKHR presentInfo{};
+                presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+                presentInfo.waitSemaphoreCount = 1;
+                presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
+
+                VkSwapchainKHR swapChains[] = {swapChain};
+                presentInfo.swapchainCount = 1;
+                presentInfo.pSwapchains = swapChains;
+                presentInfo.pImageIndices = &imageIndex;
+                presentInfo.pResults = nullptr;
+
+                result = vkQueuePresentKHR(graphicsQueue, &presentInfo);
+                if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+                {
+                    throw std::runtime_error("Impossibile presentare l'immagine della Swapchain!");
+                }
+
+                if (vkQueueWaitIdle(graphicsQueue) != VK_SUCCESS)
+                {
+                    throw std::runtime_error("Impossibile attendere il completamento del rendering Vulkan!");
+                }
                 Sleep(16); // 60 FPS
             }
+
+            vkDeviceWaitIdle(device);
+            cleanupVulkan();
+
+            return (int)msg.wParam;
         }
-
-        cleanupVulkan();
-
-        return (int)msg.wParam;
+        catch (const std::exception &e)
+        {
+            if (device != VK_NULL_HANDLE)
+            {
+                vkDeviceWaitIdle(device);
+            }
+            cleanupVulkan();
+            MessageBoxA(hwnd, e.what(), "Errore durante il rendering Vulkan", MB_OK | MB_ICONERROR);
+            return -1;
+        }
     }
 };
 

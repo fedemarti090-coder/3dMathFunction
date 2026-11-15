@@ -1,14 +1,20 @@
 #include "core/windowGPU.hpp"
-#include "core/calc/mathEnigne.hpp"
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
-    WinINIT app;
-    MathEngine mathEnigne;
 
-    mathEnigne.calcolaFunzione3D("x^3-3xy^2");
+    int ans = 0;
+    try
+    {
+        WinINIT app;
 
-    return app.Run(hInstance, nCmdShow);
-
-
+        std::string function = "x^3-3xy^2";
+        ans = app.Run(hInstance, nCmdShow, function);
+    }
+    catch (const std::exception &e)
+    {
+        std::cout << "Errore fatale: " << e.what() << std::endl;
+        return -1;
+    }
+    return ans;
 }

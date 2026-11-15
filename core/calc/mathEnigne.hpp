@@ -7,7 +7,6 @@
 
 #include "mathLib.hpp"
 
-
 class MathEngine
 {
 private:
@@ -15,7 +14,14 @@ private:
     float DominioMin = -1.0f;
     float step = 0.1f;
 
+    int stepsPerAxis = 0;
+    int verticesPerAxis = 0;
+
     bool debug = false;
+    bool rawData = true;
+
+    std::vector<Vertex> vertexList = {};
+    std::vector<uint32_t> indices = {};
 
     // metodo -> shunting-Yard
 
@@ -120,10 +126,34 @@ private:
 
     bool stampaVertexList(std::vector<Vertex> list)
     {
-        std::cout << list.size() << "\n";
+        std::cout << list.size() << "Vertex list:\n";
         for (const Vertex &point : list)
         {
-            std::cout << "< " << point.x << ",  " << point.y << ", " << point.z << " >\n";
+            if (rawData)
+            {
+                std::cout << point.x << ",  " << point.y << ", " << point.z << ", ";
+            }
+            else
+            {
+                std::cout << "< " << point.x << ",  " << point.y << ", " << point.z << " >\n";
+            }
+        }
+        std::cout << std::endl;
+
+        return true;
+    }
+
+    bool stampaIndices(std::vector<uint32_t> list)
+    {
+        std::cout << list.size() << "Indice list:\n";
+        for (int i = 0; i < list.size(); i += 3)
+        {
+            if (i + 3 > list.size())
+                break;
+            std::cout << "< " << list[i] << " " << list[i + 1] << " " << list[i + 2] << " >\n";
+
+            if (i > 20)
+                return true;
         }
         std::cout << std::endl;
 
@@ -276,40 +306,72 @@ private:
 
     std::vector<Vertex> avviaCalcolo(std::vector<std::string> f)
     {
-        std::vector<Vertex> vertexList;
+        std::vector<Vertex> vList;
 
-        for (float x = DominioMin; x <= DominioMax + 1e-5f; x += step)
+        stepsPerAxis = std::round((DominioMax - DominioMin) / step);
+        verticesPerAxis = stepsPerAxis + 1;
+
+        for (int xi = 0; xi <= stepsPerAxis; ++xi)
         {
-            for (float y = DominioMin; y <= DominioMax + 1e-5f; y += step)
+            float x = DominioMin + xi * step;
+            for (int yi = 0; yi <= stepsPerAxis; ++yi)
             {
+                float y = DominioMin + yi * step;
                 float z = calcPoint(x, y, f);
 
-                vertexList.push_back({x, y, z});
+                vList.push_back({x, y, z});
             }
         }
-        return vertexList;
+        return vList;
+    }
+
+    std::vector<uint32_t> generateIndices()
+    {
+        std::vector<uint32_t> ind;
+
+        for (int i = 0; i < stepsPerAxis; i++)
+        {
+            for (int j = 0; j < stepsPerAxis; j++)
+            {
+                uint32_t current = i * verticesPerAxis + j;
+                uint32_t right = i * verticesPerAxis + (j + 1);
+                uint32_t bottom = (i + 1) * verticesPerAxis + j;
+                uint32_t botRight = (i + 1) * verticesPerAxis + (j + 1);
+
+                // Primo triangolo
+                ind.push_back(current);
+                ind.push_back(bottom);
+                ind.push_back(right);
+
+                // Secondo triangolo
+                ind.push_back(right);
+                ind.push_back(bottom);
+                ind.push_back(botRight);
+            }
+        }
+        return ind;
     }
 
 public:
     bool calcolaFunzione3D(std::string f)
     {
-        // f -> funzione
-        // es f = x**3 - 3xy**2
-
         std::vector<std::string> Ans = tokenizeFunction(f);
-
         std::vector<std::string> AnsSY = shuntingYard(Ans);
 
-        std::vector<Vertex> vertexAns = avviaCalcolo(AnsSY);
+        vertexList = avviaCalcolo(AnsSY);
+        indices = generateIndices();
 
         if (debug)
         {
             stampaFuncStr(Ans);
             stampaFuncStr(AnsSY);
-
-            stampaVertexList(vertexAns);
+            stampaVertexList(vertexList);
+            stampaIndices(indices);
         }
 
         return true;
     }
+
+    std::vector<Vertex> getVertexList() { return vertexList; }
+    std::vector<uint32_t> getIndices() { return indices; }
 };
