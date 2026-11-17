@@ -15,9 +15,12 @@
 #include <fstream>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 
 #include "calc/mathLib.hpp"
 #include "calc/mathEnigne.hpp"
+
+#include "connection/settingBridge.hpp"
 
 // UBO ( Uniform Buffer Object )
 struct CameraBufferObject
@@ -30,6 +33,8 @@ struct CameraBufferObject
 class WinINIT
 {
 private:
+
+
     MathEngine mathEngine;
 
     VkInstance instance = VK_NULL_HANDLE;  // Istanza global
@@ -1101,7 +1106,7 @@ public:
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
 
-    int Run(HINSTANCE hInstance, int nCmdShow, std::string function)
+    int Run(HINSTANCE hInstance, int nCmdShow, std::string function, SettingBridge &settingBridge)
     {
 
         const wchar_t CLASS_NAME[] = L"Vulkan Window Class";
@@ -1161,6 +1166,15 @@ public:
             MSG msg = {};
 
             bool isRunning = true;
+            bool socketWarningShown = false;
+            float rotationXDegrees = 0.0f;
+            float rotationYDegrees = 0.0f;
+            constexpr float radiansToDegrees = 180.0f / 3.14159265358979323846f;
+            const auto normalizeDegrees = [](float degrees)
+            {
+                degrees = std::fmod(degrees, 360.0f);
+                return degrees < 0.0f ? degrees + 360.0f : degrees;
+            };
 
             while (isRunning)
             {
@@ -1207,19 +1221,42 @@ public:
                     {
                         int deltaX = mouseX - clickX;
                         int deltaY = mouseY - clickY;
+                        bool rotated = false;
 
                         if (isLeftPressed)
                         {
                             if (deltaX != 0)
                             {
-                                model = rotateZ(deltaX * sensitivity) * model;
+                                const float angle = deltaX * sensitivity;
+                                model = rotateZ(angle) * model;
+                                rotationYDegrees = normalizeDegrees(rotationYDegrees + angle * radiansToDegrees);
+                                rotated = true;
                             }
                         }
                         else if (isRightPressed)
                         {
                             if (deltaY != 0)
                             {
-                                model = rotateX(deltaY * sensitivity) * model;
+                                const float angle = deltaY * sensitivity;
+                                model = rotateX(angle) * model;
+                                rotationXDegrees = normalizeDegrees(rotationXDegrees + angle * radiansToDegrees);
+                                rotated = true;
+                            }
+                        }
+
+                        if (rotated)
+                        {
+                            if (!settingBridge.sendData({rotationXDegrees, rotationYDegrees}))
+                            {
+                                if (!socketWarningShown)
+                                {
+                                    std::cerr << "Impossibile inviare la rotazione a Electron.\n";
+                                    socketWarningShown = true;
+                                }
+                            }
+                            else
+                            {
+                                socketWarningShown = false;
                             }
                         }
 

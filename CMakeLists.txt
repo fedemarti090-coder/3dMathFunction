@@ -6,12 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(3DFunctCalc 
     main.cpp
+    core/connection/soketManager.cpp
 )
 
 set(Vulkan_ROOT "$ENV{VULKAN_SDK}")
 find_package(Vulkan REQUIRED)
 
-target_link_libraries(3DFunctCalc PRIVATE Vulkan::Vulkan)
+target_link_libraries(3DFunctCalc PRIVATE 
+    Vulkan::Vulkan
+    ws2_32
+)
 
 if(MSVC)
     target_link_options(3DFunctCalc PRIVATE "/SUBSYSTEM:CONSOLE")
