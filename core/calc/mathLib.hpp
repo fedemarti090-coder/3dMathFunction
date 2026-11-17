@@ -10,6 +10,11 @@ struct Point
 struct Vertex
 {
     float x, y, z;
+    float colorR = 0.0f;
+    float colorG = 0.0f;
+    float colorB = 0.0f;
+    float colorA = 1.0f;
+    float useExplicitColor = 0.0f;
 };
 
 struct Vec3

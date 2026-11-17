@@ -57,6 +57,18 @@ function handleCppData(data) {
 
     for (const line of lines) {
         if (!line.trim()) continue;
+        if (line.startsWith('FORMULA_STATUS;')) {
+            const status = line.slice('FORMULA_STATUS;'.length);
+            if (status !== 'VALID' && status !== 'INVALID') {
+                console.error('[Electron] Stato formula non valido:', line);
+                continue;
+            }
+            if (win && !win.isDestroyed()) {
+                win.webContents.send('cpp:formula-status', { valid: status === 'VALID' });
+            }
+            continue;
+        }
+
         const values = line.split(';').map(Number);
         if (values.length !== 2 || !values.every(Number.isFinite)) {
             console.error('[Electron] Messaggio DataGive non valido:', line);

@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 #include <fstream> // per debug
 
@@ -12,6 +13,13 @@
 
 class MathEngine
 {
+public:
+    class InvalidGridParameters : public std::invalid_argument
+    {
+    public:
+        using std::invalid_argument::invalid_argument;
+    };
+
 private:
     float DominioMax = 3.14f *  2;
     float DominioMin = -3.14f * 2;
@@ -467,23 +475,65 @@ private:
 public:
     bool calcolaFunzione3D(std::string f)
     {
-        std::vector<std::string> Ans = tokenizeFunction(f);
-        std::vector<std::string> AnsSY = shuntingYard(Ans);
+        return calcolaFunzione3D(std::move(f), DominioMin, DominioMax, step);
+    }
 
-        vertexList = avviaCalcolo(AnsSY);
-        indices = generateIndices();
-
-        if (debug)
+    bool calcolaFunzione3D(std::string f, float dominioMin, float dominioMax, float nuovoStep)
+    {
+        if (!std::isfinite(dominioMin) || !std::isfinite(dominioMax) || !std::isfinite(nuovoStep) ||
+            dominioMax <= dominioMin || nuovoStep <= 0.0f)
         {
-            stampaFuncStr(Ans);
-            stampaFuncStr(AnsSY);
-            stampaVertexList(vertexList);
-            stampaIndices(indices);
+            throw InvalidGridParameters("Dominio o step non validi.");
         }
 
-        if (outDebug)
+        const double requestedSteps = std::round(
+            (static_cast<double>(dominioMax) - dominioMin) / nuovoStep);
+        if (requestedSteps < 1.0 || requestedSteps > 512.0)
         {
-            outputCSVtoDebug(vertexList, "../data/outputDebug.csv");
+            throw InvalidGridParameters("La griglia deve avere tra 1 e 512 step per asse.");
+        }
+
+        const float previousDomainMin = DominioMin;
+        const float previousDomainMax = DominioMax;
+        const float previousStep = step;
+        DominioMin = dominioMin;
+        DominioMax = dominioMax;
+        step = nuovoStep;
+
+        try
+        {
+            std::vector<std::string> Ans = tokenizeFunction(f);
+            std::vector<std::string> AnsSY = shuntingYard(Ans);
+            std::vector<Vertex> newVertexList = avviaCalcolo(AnsSY);
+            std::vector<uint32_t> newIndices = generateIndices();
+
+            if (newVertexList.empty() || newIndices.empty())
+            {
+                throw std::runtime_error("La funzione non ha generato una superficie valida.");
+            }
+
+            vertexList = std::move(newVertexList);
+            indices = std::move(newIndices);
+
+            if (debug)
+            {
+                stampaFuncStr(Ans);
+                stampaFuncStr(AnsSY);
+                stampaVertexList(vertexList);
+                stampaIndices(indices);
+            }
+
+            if (outDebug)
+            {
+                outputCSVtoDebug(vertexList, "../data/outputDebug.csv");
+            }
+        }
+        catch (...)
+        {
+            DominioMin = previousDomainMin;
+            DominioMax = previousDomainMax;
+            step = previousStep;
+            throw;
         }
 
         return true;

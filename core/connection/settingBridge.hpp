@@ -36,6 +36,11 @@ private:
         return oss.str();
     }
 
+    std::string serializeFormulaStatus(bool valid)
+    {
+        return valid ? "FORMULA_STATUS;VALID" : "FORMULA_STATUS;INVALID";
+    }
+
     DataGet deserializeData(const std::string &rawMessage)
     {
         DataGet data{};
@@ -98,6 +103,11 @@ public:
     {
         std::string rawData = serializeData(payload);
         return soketManager.sendRawData(rawData);
+    }
+
+    bool sendFormulaStatus(bool valid)
+    {
+        return soketManager.sendRawData(serializeFormulaStatus(valid));
     }
 
     void start(int port = 8080)

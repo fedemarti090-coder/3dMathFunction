@@ -15,14 +15,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
         DataGet data{};
         std::mutex dataMutex;
-        bool hasReceivedData = false;
+        bool hasPendingSettings = false;
 
         settingBridge.setOnDataReceivedCallback([&](const DataGet &dataReceived)
                                                 {
             std::lock_guard<std::mutex> lock(dataMutex);
             data = dataReceived;
-            hasReceivedData = true;
-            std::cout << "DataGet salvato nel main: " << data.function << std::endl; });
+            hasPendingSettings = true;
+            std::cout << "Impostazioni ricevute da Electron: " << data.function << std::endl; });
 
         settingBridge.setOnClientConnectedCallback([&settingBridge]()
                                                    {
@@ -38,8 +38,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
         WinINIT app;
 
+        auto takePendingSettings = [&](DataGet &settings)
+        {
+            std::lock_guard<std::mutex> lock(dataMutex);
+            if (!hasPendingSettings)
+            {
+                return false;
+            }
+
+            settings = data;
+            hasPendingSettings = false;
+            return true;
+        };
+
         std::string function = "sin(x) + cos(y)";
-        ans = app.Run(hInstance, nCmdShow, function, settingBridge);
+        ans = app.Run(hInstance, nCmdShow, function, settingBridge, takePendingSettings);
 
         settingBridge.stop();
     }

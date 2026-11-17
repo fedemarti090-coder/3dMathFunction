@@ -9,6 +9,7 @@
 #include <iostream>
 #include <windows.h>
 #include <vulkan/vulkan.h>
+#include <cstddef>
 #include <stdexcept>
 #include <vector>
 #include <array>
@@ -16,19 +17,32 @@
 #include <algorithm>
 #include <cstring>
 #include <cmath>
+#include <functional>
+#include <new>
+#include <utility>
 
 #include "calc/mathLib.hpp"
 #include "calc/mathEnigne.hpp"
+#include "connection/payloadStruct.hpp"
 
 #include "connection/settingBridge.hpp"
 
 // UBO ( Uniform Buffer Object )
-struct CameraBufferObject
+struct alignas(16) CameraBufferObject
 {
     Mat4 view;
     Mat4 projection;
     Mat4 model;
+    std::array<float, 4> colorStart;
+    std::array<float, 4> colorEnd;
+    float alpha;
+    std::array<float, 3> padding;
 };
+
+static_assert(offsetof(CameraBufferObject, colorStart) == 192);
+static_assert(offsetof(CameraBufferObject, colorEnd) == 208);
+static_assert(offsetof(CameraBufferObject, alpha) == 224);
+static_assert(sizeof(CameraBufferObject) == 240);
 
 class WinINIT
 {
@@ -80,6 +94,8 @@ private:
 
     std::vector<Vertex> vertexList = {};
     std::vector<uint32_t> indices = {};
+    std::vector<Vertex> surfaceVertexList = {};
+    std::vector<uint32_t> surfaceIndices = {};
 
     int width = 1200;
     int height = 800;
@@ -300,11 +316,19 @@ private:
         bindingDescription.stride = sizeof(Vertex); // dimensioni input shader
         bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        std::array<VkVertexInputAttributeDescription, 1> attributeDescriptions{};
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 float (x, y, z)
+        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[0].offset = offsetof(Vertex, x);
+        attributeDescriptions[1].binding = 0;
+        attributeDescriptions[1].location = 1;
+        attributeDescriptions[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributeDescriptions[1].offset = offsetof(Vertex, colorR);
+        attributeDescriptions[2].binding = 0;
+        attributeDescriptions[2].location = 2;
+        attributeDescriptions[2].format = VK_FORMAT_R32_SFLOAT;
+        attributeDescriptions[2].offset = offsetof(Vertex, useExplicitColor);
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -360,7 +384,13 @@ private:
 
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
         colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorBlendAttachment.blendEnable = VK_FALSE;
+        colorBlendAttachment.blendEnable = VK_TRUE;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
         VkPipelineColorBlendStateCreateInfo colorBlending{};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -472,6 +502,136 @@ private:
         }
 
         throw std::runtime_error("Impossibile trovare un tipo di memoria GPU adatto!");
+    }
+
+    void destroyGeometryBuffers()
+    {
+        if (vertexBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, vertexBuffer, nullptr);
+            vertexBuffer = VK_NULL_HANDLE;
+        }
+        if (vertexBufferMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, vertexBufferMemory, nullptr);
+            vertexBufferMemory = VK_NULL_HANDLE;
+        }
+        if (indexBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device, indexBuffer, nullptr);
+            indexBuffer = VK_NULL_HANDLE;
+        }
+        if (indexBufferMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device, indexBufferMemory, nullptr);
+            indexBufferMemory = VK_NULL_HANDLE;
+        }
+        indexCount = 0;
+    }
+
+    void appendOverlayBox(
+        float minX, float maxX,
+        float minY, float maxY,
+        float minZ, float maxZ,
+        const std::array<float, 4> &color)
+    {
+        const uint32_t firstVertex = static_cast<uint32_t>(vertexList.size());
+        const std::array<Vec3, 8> corners = {{
+            {minX, minY, minZ}, {maxX, minY, minZ},
+            {maxX, maxY, minZ}, {minX, maxY, minZ},
+            {minX, minY, maxZ}, {maxX, minY, maxZ},
+            {maxX, maxY, maxZ}, {minX, maxY, maxZ}
+        }};
+        for (const Vec3 &corner : corners)
+        {
+            vertexList.push_back({
+                corner.x, corner.y, corner.z,
+                color[0], color[1], color[2], color[3], 1.0f
+            });
+        }
+
+        constexpr std::array<uint32_t, 36> boxIndices = {
+            0, 2, 1, 0, 3, 2,
+            4, 5, 6, 4, 6, 7,
+            0, 1, 5, 0, 5, 4,
+            1, 2, 6, 1, 6, 5,
+            2, 3, 7, 2, 7, 6,
+            3, 0, 4, 3, 4, 7
+        };
+        for (uint32_t index : boxIndices)
+        {
+            indices.push_back(firstVertex + index);
+        }
+    }
+
+    void appendOverlayPlane(
+        const std::array<Vec3, 4> &corners,
+        const std::array<float, 4> &color)
+    {
+        const uint32_t firstVertex = static_cast<uint32_t>(vertexList.size());
+        for (const Vec3 &corner : corners)
+        {
+            vertexList.push_back({
+                corner.x, corner.y, corner.z,
+                color[0], color[1], color[2], color[3], 1.0f
+            });
+        }
+        indices.insert(indices.end(), {
+            firstVertex, firstVertex + 1, firstVertex + 2,
+            firstVertex, firstVertex + 2, firstVertex + 3
+        });
+    }
+
+    void rebuildRenderGeometry(
+        float domainMin, float domainMax,
+        bool showAxisX, bool showAxisY, bool showAxisZ,
+        bool showZeroPlanes)
+    {
+        vertexList = surfaceVertexList;
+        indices = surfaceIndices;
+
+        const float extent = std::max(std::abs(domainMin), std::abs(domainMax));
+        const float halfThickness = std::max(extent * 0.0025f, 0.01f);
+        constexpr std::array<float, 4> axisXColor = {1.0f, 0.25f, 0.25f, 1.0f};
+        constexpr std::array<float, 4> axisYColor = {0.25f, 1.0f, 0.25f, 1.0f};
+        constexpr std::array<float, 4> axisZColor = {0.25f, 0.5f, 1.0f, 1.0f};
+
+        if (showAxisX)
+        {
+            appendOverlayBox(-extent, extent, -halfThickness, halfThickness,
+                             -halfThickness, halfThickness, axisXColor);
+        }
+        if (showAxisY)
+        {
+            appendOverlayBox(-halfThickness, halfThickness, -extent, extent,
+                             -halfThickness, halfThickness, axisYColor);
+        }
+        if (showAxisZ)
+        {
+            appendOverlayBox(-halfThickness, halfThickness, -halfThickness, halfThickness,
+                             -extent, extent, axisZColor);
+        }
+
+        if (showZeroPlanes)
+        {
+            constexpr float planeAlpha = 0.22f;
+            const std::array<float, 4> planeXColor = {axisXColor[0], axisXColor[1], axisXColor[2], planeAlpha};
+            const std::array<float, 4> planeYColor = {axisYColor[0], axisYColor[1], axisYColor[2], planeAlpha};
+            const std::array<float, 4> planeZColor = {axisZColor[0], axisZColor[1], axisZColor[2], planeAlpha};
+
+            appendOverlayPlane({{
+                {0.0f, -extent, -extent}, {0.0f, extent, -extent},
+                {0.0f, extent, extent}, {0.0f, -extent, extent}
+            }}, planeXColor);
+            appendOverlayPlane({{
+                {-extent, 0.0f, -extent}, {extent, 0.0f, -extent},
+                {extent, 0.0f, extent}, {-extent, 0.0f, extent}
+            }}, planeYColor);
+            appendOverlayPlane({{
+                {-extent, -extent, 0.0f}, {extent, -extent, 0.0f},
+                {extent, extent, 0.0f}, {-extent, extent, 0.0f}
+            }}, planeZColor);
+        }
     }
 
     void createVertexBuffer()
@@ -796,7 +956,7 @@ private:
         uboLayoutBinding.binding = 0;
         uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uboLayoutBinding.descriptorCount = 1;
-        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         uboLayoutBinding.pImmutableSamplers = nullptr;
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -971,27 +1131,7 @@ private:
             vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
             renderFinishedSemaphore = VK_NULL_HANDLE;
         }
-        if (vertexBuffer != VK_NULL_HANDLE)
-        {
-            vkDestroyBuffer(device, vertexBuffer, nullptr);
-            vertexBuffer = VK_NULL_HANDLE;
-        }
-        if (vertexBufferMemory != VK_NULL_HANDLE)
-        {
-            vkFreeMemory(device, vertexBufferMemory, nullptr);
-            vertexBufferMemory = VK_NULL_HANDLE;
-        }
-
-        if (indexBuffer != VK_NULL_HANDLE)
-        {
-            vkDestroyBuffer(device, indexBuffer, nullptr);
-            indexBuffer = VK_NULL_HANDLE;
-        }
-        if (indexBufferMemory != VK_NULL_HANDLE)
-        {
-            vkFreeMemory(device, indexBufferMemory, nullptr);
-            indexBufferMemory = VK_NULL_HANDLE;
-        }
+        destroyGeometryBuffers();
         if (descriptorPool != VK_NULL_HANDLE)
         {
             vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -1106,7 +1246,8 @@ public:
         return DefWindowProc(hwnd, uMsg, wParam, lParam);
     }
 
-    int Run(HINSTANCE hInstance, int nCmdShow, std::string function, SettingBridge &settingBridge)
+    int Run(HINSTANCE hInstance, int nCmdShow, std::string function, SettingBridge &settingBridge,
+            const std::function<bool(DataGet &)> &takePendingSettings)
     {
 
         const wchar_t CLASS_NAME[] = L"Vulkan Window Class";
@@ -1154,6 +1295,8 @@ public:
             {
                 throw std::runtime_error("La funzione non ha generato geometria da disegnare.");
             }
+            surfaceVertexList = vertexList;
+            surfaceIndices = indices;
 
             createDepthResources();
             createUniformBuffer();
@@ -1169,12 +1312,35 @@ public:
             bool socketWarningShown = false;
             float rotationXDegrees = 0.0f;
             float rotationYDegrees = 0.0f;
+            float rotationZDegrees = 0.0f;
+            RGB colorStart{0.0f, 0.0f, 1.0f};
+            RGB colorEnd{1.0f, 0.0f, 0.0f};
+            float surfaceAlpha = 1.0f;
+            bool showAxisX = false;
+            bool showAxisY = false;
+            bool showAxisZ = false;
+            bool showZeroPlanes = false;
+            float activeDomainMin = vertexList.front().x;
+            float activeDomainMax = vertexList.back().x;
             constexpr float radiansToDegrees = 180.0f / 3.14159265358979323846f;
+            constexpr float degreesToRadians = 3.14159265358979323846f / 180.0f;
             const auto normalizeDegrees = [](float degrees)
             {
                 degrees = std::fmod(degrees, 360.0f);
                 return degrees < 0.0f ? degrees + 360.0f : degrees;
             };
+            const auto updateModelRotation = [&]()
+            {
+                // Electron usa Y-up, mentre la scena Vulkan usa Z-up.
+                model = rotateZ(rotationYDegrees * degreesToRadians)
+                      * rotateY(rotationZDegrees * degreesToRadians)
+                      * rotateX(rotationXDegrees * degreesToRadians);
+            };
+            bool hasRemoteGraphSettings = false;
+            std::string lastRequestedFunction;
+            float lastRequestedDomainMin = 0.0f;
+            float lastRequestedDomainMax = 0.0f;
+            float lastRequestedStep = 0.0f;
 
             while (isRunning)
             {
@@ -1192,6 +1358,118 @@ public:
                 if (!isRunning)
                 {
                     break;
+                }
+
+                DataGet settings{};
+                if (takePendingSettings(settings))
+                {
+                    rotationXDegrees = normalizeDegrees(settings.rotateX);
+                    rotationYDegrees = normalizeDegrees(settings.rotateY);
+                    rotationZDegrees = normalizeDegrees(settings.rotateZ);
+                    colorStart = settings.col1;
+                    colorEnd = settings.col2;
+                    surfaceAlpha = settings.alpha;
+                    updateModelRotation();
+
+                    const bool overlaySettingsChanged =
+                        settings.asseX != showAxisX ||
+                        settings.asseY != showAxisY ||
+                        settings.asseZ != showAxisZ ||
+                        settings.Superfici0 != showZeroPlanes;
+                    showAxisX = settings.asseX;
+                    showAxisY = settings.asseY;
+                    showAxisZ = settings.asseZ;
+                    showZeroPlanes = settings.Superfici0;
+
+                    const bool graphSettingsChanged =
+                        !hasRemoteGraphSettings ||
+                        settings.function != lastRequestedFunction ||
+                        settings.dominioMin != lastRequestedDomainMin ||
+                        settings.dominioMax != lastRequestedDomainMax ||
+                        settings.step != lastRequestedStep;
+
+                    std::vector<Vertex> updatedVertices;
+                    std::vector<uint32_t> updatedIndices;
+                    bool geometryReady = false;
+                    if (graphSettingsChanged)
+                    {
+                        hasRemoteGraphSettings = true;
+                        lastRequestedFunction = settings.function;
+                        lastRequestedDomainMin = settings.dominioMin;
+                        lastRequestedDomainMax = settings.dominioMax;
+                        lastRequestedStep = settings.step;
+
+                        try
+                        {
+                            if (!mathEngine.calcolaFunzione3D(
+                                    settings.function,
+                                    settings.dominioMin,
+                                    settings.dominioMax,
+                                    settings.step))
+                            {
+                                throw std::runtime_error("Calcolo della funzione non riuscito.");
+                            }
+
+                            updatedVertices = mathEngine.getVertexList();
+                            updatedIndices = mathEngine.getIndices();
+                            if (updatedVertices.empty() || updatedIndices.empty())
+                            {
+                                throw std::runtime_error("La funzione non ha generato geometria.");
+                            }
+                            geometryReady = true;
+                        }
+                        catch (const MathEngine::InvalidGridParameters &e)
+                        {
+                            std::cerr << "[SettingBridge] Dominio o step non validi: "
+                                      << e.what() << '\n';
+                        }
+                        catch (const std::bad_alloc &)
+                        {
+                            throw;
+                        }
+                        catch (const std::exception &e)
+                        {
+                            std::cerr << "[SettingBridge] Aggiornamento funzione rifiutato: "
+                                      << e.what() << '\n';
+                            if (!settingBridge.sendFormulaStatus(false))
+                            {
+                                std::cerr << "[SettingBridge] Impossibile notificare l'errore formula a Electron.\n";
+                            }
+                        }
+
+                        if (geometryReady)
+                        {
+                            surfaceVertexList = std::move(updatedVertices);
+                            surfaceIndices = std::move(updatedIndices);
+                            activeDomainMin = settings.dominioMin;
+                            activeDomainMax = settings.dominioMax;
+                        }
+                    }
+
+                    if (geometryReady || overlaySettingsChanged)
+                    {
+                        rebuildRenderGeometry(
+                            activeDomainMin,
+                            activeDomainMax,
+                            showAxisX,
+                            showAxisY,
+                            showAxisZ,
+                            showZeroPlanes);
+                        if (vkDeviceWaitIdle(device) != VK_SUCCESS)
+                        {
+                            throw std::runtime_error("Impossibile attendere la GPU prima di aggiornare la mesh.");
+                        }
+                        destroyGeometryBuffers();
+                        createVertexBuffer();
+
+                        if (geometryReady)
+                        {
+                            if (!settingBridge.sendFormulaStatus(true))
+                            {
+                                std::cerr << "[SettingBridge] Impossibile notificare lo stato formula a Electron.\n";
+                            }
+                        }
+                    }
                 }
 
                 // Cattura del mouse
@@ -1228,7 +1506,6 @@ public:
                             if (deltaX != 0)
                             {
                                 const float angle = deltaX * sensitivity;
-                                model = rotateZ(angle) * model;
                                 rotationYDegrees = normalizeDegrees(rotationYDegrees + angle * radiansToDegrees);
                                 rotated = true;
                             }
@@ -1238,7 +1515,6 @@ public:
                             if (deltaY != 0)
                             {
                                 const float angle = deltaY * sensitivity;
-                                model = rotateX(angle) * model;
                                 rotationXDegrees = normalizeDegrees(rotationXDegrees + angle * radiansToDegrees);
                                 rotated = true;
                             }
@@ -1246,6 +1522,7 @@ public:
 
                         if (rotated)
                         {
+                            updateModelRotation();
                             if (!settingBridge.sendData({rotationXDegrees, rotationYDegrees}))
                             {
                                 if (!socketWarningShown)
@@ -1302,6 +1579,17 @@ public:
                 ubo.view = view;
                 ubo.projection = projection;
                 ubo.model = model;
+                ubo.colorStart = {
+                    std::clamp(colorStart.R, 0.0f, 1.0f),
+                    std::clamp(colorStart.G, 0.0f, 1.0f),
+                    std::clamp(colorStart.B, 0.0f, 1.0f),
+                    1.0f};
+                ubo.colorEnd = {
+                    std::clamp(colorEnd.R, 0.0f, 1.0f),
+                    std::clamp(colorEnd.G, 0.0f, 1.0f),
+                    std::clamp(colorEnd.B, 0.0f, 1.0f),
+                    1.0f};
+                ubo.alpha = std::clamp(surfaceAlpha, 0.0f, 1.0f);
                 std::memcpy(uniformBufferMapped, &ubo, sizeof(ubo));
 
                 uint32_t imageIndex;

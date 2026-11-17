@@ -119,6 +119,12 @@ input {
     border-color: #7d7d7d;
 }
 
+.text-field.input-error,
+.text-field.input-error:focus {
+    border-color: #e5484d;
+    box-shadow: 0 0 0 2px rgb(229 72 77 / 20%);
+}
+
 .text-field::placeholder {
     color: #222;
     opacity: 1;

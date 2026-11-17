@@ -12,5 +12,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         const listener = (_event, data) => callback(data);
         ipcRenderer.on('cpp:data', listener);
         return () => ipcRenderer.removeListener('cpp:data', listener);
+    },
+    onFormulaStatus: (callback) => {
+        const listener = (_event, status) => callback(status);
+        ipcRenderer.on('cpp:formula-status', listener);
+        return () => ipcRenderer.removeListener('cpp:formula-status', listener);
     }
 });

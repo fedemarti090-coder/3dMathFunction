@@ -74,6 +74,10 @@ async function sendCurrentSettings() {
 }
 
 functionInput.addEventListener('input', renderFormula);
+functionInput.addEventListener('input', () => {
+    functionInput.classList.remove('input-error');
+    functionInput.setAttribute('aria-invalid', 'false');
+});
 renderFormula();
 
 function updateGradient() {
@@ -84,6 +88,14 @@ function updateGradient() {
 startColor.addEventListener('input', updateGradient);
 endColor.addEventListener('input', updateGradient);
 updateGradient();
+
+for (const input of document.querySelectorAll('#color-start, #color-end, #alpha')) {
+    input.addEventListener('input', sendCurrentSettings);
+}
+
+for (const input of document.querySelectorAll('#axis-x, #axis-y, #axis-z, #zero-surfaces')) {
+    input.addEventListener('change', sendCurrentSettings);
+}
 
 function updateSlider(slider) {
     const output = document.querySelector(`#${slider.id}-value`);
@@ -98,16 +110,34 @@ for (const slider of document.querySelectorAll('.range-row input[type="range"], 
 document.getElementById('reset-button').addEventListener('click', resetRotation);
 
 let applyingCppRotation = false;
-const settingsInputs = document.querySelectorAll(
-    '#function-input, #domain-min, #domain-max, #function-step, ' +
-    '#rotation-x, #rotation-y, #rotation-z, #color-start, #color-end, #alpha, ' +
-    '#axis-x, #axis-y, #axis-z, #zero-surfaces'
-);
-for (const input of settingsInputs) {
+const rotationInputs = document.querySelectorAll('#rotation-x, #rotation-y, #rotation-z');
+for (const input of rotationInputs) {
     input.addEventListener('input', () => {
         if (!applyingCppRotation) sendCurrentSettings();
     });
-    input.addEventListener('change', sendCurrentSettings);
+}
+
+let graphSettingsTimer;
+const graphInputs = document.querySelectorAll(
+    '#function-input, #domain-min, #domain-max, #function-step'
+);
+for (const input of graphInputs) {
+    input.addEventListener('input', () => {
+        clearTimeout(graphSettingsTimer);
+        graphSettingsTimer = setTimeout(sendCurrentSettings, 350);
+    });
+    input.addEventListener('change', () => {
+        clearTimeout(graphSettingsTimer);
+        sendCurrentSettings();
+    });
+}
+
+for (const button of document.querySelectorAll('.examples-section .example-row button[data-function]')) {
+    button.addEventListener('click', () => {
+        functionInput.value = button.dataset.function;
+        functionInput.dispatchEvent(new Event('input', { bubbles: true }));
+        functionInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
 }
 
 window.electronAPI.onDataGive(({ rotateX, rotateY }) => {
@@ -119,6 +149,11 @@ window.electronAPI.onDataGive(({ rotateX, rotateY }) => {
     rotationX.dispatchEvent(new Event('input', { bubbles: true }));
     rotationY.dispatchEvent(new Event('input', { bubbles: true }));
     applyingCppRotation = false;
+});
+
+window.electronAPI.onFormulaStatus(({ valid }) => {
+    functionInput.classList.toggle('input-error', !valid);
+    functionInput.setAttribute('aria-invalid', String(!valid));
 });
 
 window.electronAPI.onSocketStatus((connected) => {
