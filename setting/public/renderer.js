@@ -7,7 +7,7 @@ const functionInput = document.querySelector('#function-input');
 const formulaPreview = document.querySelector('#formula-preview');
 
 function renderFormula() {
-    const formula = functionInput.value.trim();
+    const formula = "f(x, y) =" + functionInput.value.trim();
     formulaPreview.replaceChildren();
 
     if (!formula) {
