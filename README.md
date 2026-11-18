@@ -2,6 +2,8 @@
 
 ![Schermata dell'applicazione](img/screen/img-11.png)
 
+! Tutta l'applicazione è stata sviluppata senza l'uso di librerie esterne neanche header-only solo vulkan-SDk con le windowsAPI
+
 Applicazione desktop per esplorare superfici tridimensionali definite da una
 funzione di due variabili:
 
